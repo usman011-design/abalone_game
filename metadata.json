@@ -1,0 +1,5 @@
+{
+  "name": "Abalone Strategy Master",
+  "description": "A high-fidelity Abalone board game with realistic physics-inspired animations, strategic AI opponent powered by Gemini, and full rule enforcement.",
+  "requestFramePermissions": []
+}
