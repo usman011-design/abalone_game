@@ -4,7 +4,6 @@ import { GameState, AxialCoord, Player } from './types';
 import { INITIAL_SETUP, validateMove, applyMove } from './logic/gameEngine';
 import { coordToKey, areEqual, getDistance, subCoords } from './utils/hexUtils';
 import Board from './components/Board';
-import { getGeminiSuggestion } from './services/geminiService';
 import { Trophy, RefreshCw, Cpu, BookOpen, MessageSquare, ChevronRight, AlertCircle } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -75,12 +74,6 @@ const App: React.FC = () => {
     }
   };
 
-  const askGemini = async () => {
-    setIsAiLoading(true);
-    const advice = await getGeminiSuggestion(gameState);
-    setSuggestion(advice);
-    setIsAiLoading(false);
-  };
 
   const resetGame = () => {
     setGameState({
