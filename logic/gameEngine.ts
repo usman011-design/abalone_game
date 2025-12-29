@@ -7,6 +7,10 @@ import {
   areEqual
 } from '../utils/hexUtils';
 
+/* ----------------------------------
+   INITIAL BOARD SETUP
+---------------------------------- */
+
 export const INITIAL_SETUP: BoardState = new Map();
 
 const setupMarbles = () => {
@@ -20,32 +24,29 @@ const setupMarbles = () => {
   for (let q = -1; q <= 4; q++) INITIAL_SETUP.set(coordToKey({ q, r: -3 }), 'white');
   for (let q = -1; q <= 1; q++) INITIAL_SETUP.set(coordToKey({ q, r: -2 }), 'white');
 };
+
 setupMarbles();
 
 /* ----------------------------------
    HELPERS
 ---------------------------------- */
 
-// Detect group axis (for 2–3 marbles)
+// STRICT group axis detection
 const getGroupAxis = (marbles: AxialCoord[]): AxialCoord | null => {
   if (marbles.length < 2) return null;
-  const diff = subCoords(marbles[1], marbles[0]);
 
-  return (
-    DIRECTIONS.find(d =>
-      areEqual(d, diff) ||
-      areEqual(d, { q: -diff.q, r: -diff.r })
-    ) || null
-  );
-};
+  const base = marbles[0];
+  const diffs = marbles.slice(1).map(m => subCoords(m, base));
 
-// Valid perpendicular sidestep directions ONLY
-const getSideStepDirections = (axis: AxialCoord): AxialCoord[] => {
-  return DIRECTIONS.filter(d =>
-    !areEqual(d, axis) &&
-    !areEqual(d, { q: -axis.q, r: -axis.r }) &&
-    (d.q * axis.q + d.r * axis.r) === 0 // perpendicular in axial space
-  );
+  for (const d of DIRECTIONS) {
+    const opposite = { q: -d.q, r: -d.r };
+    const aligned = diffs.every(diff =>
+      areEqual(diff, d) || areEqual(diff, opposite)
+    );
+    if (aligned) return d;
+  }
+
+  return null;
 };
 
 /* ----------------------------------
@@ -66,7 +67,7 @@ export const validateMove = (
 
   const groupAxis = getGroupAxis(marbles);
 
-  // Detect movement direction (must be adjacent)
+  // Detect move direction (must be adjacent)
   let direction: AxialCoord | null = null;
   for (const m of marbles) {
     const diff = subCoords(target, m);
@@ -77,48 +78,30 @@ export const validateMove = (
   }
 
   if (!direction)
-    return { valid: false, error: 'Target must be adjacent to a selected marble' };
+    return { valid: false, error: 'Target must be adjacent' };
 
   /* ----------------------------------
-     DIRECTION LOCK (CRITICAL FIX)
+     🔒 HARD DIRECTION LOCK (FIX)
   ---------------------------------- */
 
   if (groupAxis) {
-    const inline =
-      areEqual(direction, groupAxis) ||
-      areEqual(direction, { q: -groupAxis.q, r: -groupAxis.r });
+    const forward = groupAxis;
+    const backward = { q: -groupAxis.q, r: -groupAxis.r };
 
-    if (!inline) {
-      const sideSteps = getSideStepDirections(groupAxis);
-      const validSideStep = sideSteps.some(d => areEqual(d, direction));
+    const allowed =
+      areEqual(direction, forward) ||
+      areEqual(direction, backward);
 
-      if (!validSideStep)
-        return { valid: false, error: 'Invalid side-step direction' };
+    if (!allowed) {
+      return {
+        valid: false,
+        error: 'Marbles can move only along their alignment'
+      };
     }
   }
 
-  const isInlineMove =
-    !groupAxis ||
-    areEqual(direction, groupAxis) ||
-    areEqual(direction, { q: -groupAxis.q, r: -groupAxis.r });
-
   /* ----------------------------------
-     SIDE-STEP LOGIC
-  ---------------------------------- */
-
-  if (!isInlineMove) {
-    for (const m of marbles) {
-      const next = addCoords(m, direction);
-      if (!isValidPos(next))
-        return { valid: false, error: 'Cannot side-step off board' };
-      if (state.board.has(coordToKey(next)))
-        return { valid: false, error: 'All side-step target hexes must be empty' };
-    }
-    return { valid: true, direction };
-  }
-
-  /* ----------------------------------
-     INLINE / PUSH LOGIC
+     INLINE / PUSH LOGIC ONLY
   ---------------------------------- */
 
   const sorted = [...marbles].sort((a, b) =>
@@ -130,15 +113,19 @@ export const validateMove = (
   const nextPos = addCoords(leader, direction);
   const occupant = state.board.get(coordToKey(nextPos));
 
+  // Empty → normal move
   if (!occupant)
     return { valid: true, direction };
 
+  // Own marble blocking
   if (occupant === state.currentPlayer)
     return { valid: false, error: 'Blocked by your own marble' };
 
+  // Cannot push with single marble
   if (marbles.length === 1)
-    return { valid: false, error: 'A single marble cannot push' };
+    return { valid: false, error: 'Single marble cannot push' };
 
+  // Count opponent marbles
   let oppCount = 0;
   let scan = nextPos;
   while (state.board.get(coordToKey(scan)) === occupant) {
@@ -150,7 +137,7 @@ export const validateMove = (
     return { valid: false, error: 'Not enough power to push' };
 
   if (state.board.get(coordToKey(scan)) === state.currentPlayer)
-    return { valid: false, error: 'Blocked behind opponent marble' };
+    return { valid: false, error: 'Blocked behind opponent' };
 
   return { valid: true, direction };
 };
@@ -181,9 +168,11 @@ export const applyMove = (
   const nextPos = addCoords(leader, direction);
   const occupant = state.board.get(coordToKey(nextPos));
 
+  // Push opponent
   if (occupant && occupant !== state.currentPlayer) {
     let opps: AxialCoord[] = [];
     let scan = nextPos;
+
     while (state.board.get(coordToKey(scan)) === occupant) {
       opps.push(scan);
       scan = addCoords(scan, direction);
@@ -192,17 +181,23 @@ export const applyMove = (
     opps.reverse().forEach(o => {
       newBoard.delete(coordToKey(o));
       const pushed = addCoords(o, direction);
-      if (isValidPos(pushed)) newBoard.set(coordToKey(pushed), occupant);
-      else newScore[state.currentPlayer]++;
+      if (isValidPos(pushed)) {
+        newBoard.set(coordToKey(pushed), occupant);
+      } else {
+        newScore[state.currentPlayer]++;
+      }
     });
   }
 
+  // Move own marbles
   marbles.forEach(m => newBoard.delete(coordToKey(m)));
   marbles.forEach(m =>
     newBoard.set(coordToKey(addCoords(m, direction)), state.currentPlayer)
   );
 
-  const nextPlayer = state.currentPlayer === 'black' ? 'white' : 'black';
+  const nextPlayer: Player =
+    state.currentPlayer === 'black' ? 'white' : 'black';
+
   const winner =
     newScore.black >= 6 ? 'black' :
     newScore.white >= 6 ? 'white' : null;
@@ -213,6 +208,6 @@ export const applyMove = (
     currentPlayer: nextPlayer,
     score: newScore,
     winner,
-    history: [...state.history, { marbles, direction, type: 'move' }]
+    history: [...state.history, { marbles, direction, type: 'inline' }]
   };
 };
