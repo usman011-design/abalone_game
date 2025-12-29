@@ -31,16 +31,15 @@ export const isValidPos = (coord: AxialCoord): boolean => {
   return getDistance({ q: 0, r: 0 }, coord) <= radius;
 };
 
-export const getNeighbor = (coord: AxialCoord, dirIdx: number): AxialCoord => {
-  return addCoords(coord, DIRECTIONS[dirIdx]);
-};
-
 export const areEqual = (a: AxialCoord, b: AxialCoord): boolean => a.q === b.q && a.r === b.r;
 
-export const getDirectionVector = (from: AxialCoord, to: AxialCoord): AxialCoord | null => {
-  const diff = subCoords(to, from);
-  for (const dir of DIRECTIONS) {
-    if (dir.q === diff.q && dir.r === diff.r) return dir;
-  }
-  return null;
+/**
+ * Checks if three coordinates form a straight line.
+ */
+export const areColinear = (a: AxialCoord, b: AxialCoord, c: AxialCoord): boolean => {
+  const d_ab = getDistance(a, b);
+  const d_bc = getDistance(b, c);
+  const d_ac = getDistance(a, c);
+  // In a hex grid, 3 points are colinear if the sum of the shorter distances equals the longest
+  return (d_ab + d_bc === d_ac) || (d_ab + d_ac === d_bc) || (d_bc + d_ac === d_ab);
 };
